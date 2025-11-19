@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Enrutamiento C2</title>
+    <style>
+        /* ESTILOS RESPONSIVOS (Móvil y PC) */
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f0f2f5; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .card { 
+            background: white; 
+            width: 100%; 
+            max-width: 600px; 
+            padding: 30px; 
+            border-radius: 20px; 
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12); 
+            text-align: center; 
+            position: relative;
+            overflow: hidden;
+        }
+
+        h2 { color: #1a73e8; margin-bottom: 10px; }
+        p { color: #5f6368; margin-bottom: 25px; }
+
+        /* Pantalla de Login */
+        #login-screen { display: block; }
+        #quiz-screen { display: none; }
+        
+        input[type="password"] {
+            padding: 15px;
+            font-size: 1.1rem;
+            width: 80%;
+            margin-bottom: 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            outline: none;
+            transition: 0.3s;
+        }
+        input[type="password"]:focus { border-color: #1a73e8; }
+
+        /* Botones grandes para dedos en móvil */
+        .btn-action {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1rem;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+            max-width: 200px;
+            margin-top: 10px;
+        }
+        .btn-action:active { transform: scale(0.98); }
+
+        /* Estilos del Quiz */
+        .question-text { font-size: 1.3rem; font-weight: 600; color: #202124; margin-bottom: 30px; }
+        .options-container { display: flex; flex-direction: column; gap: 12px; }
+        
+        .btn-option { 
+            padding: 18px; 
+            border: 2px solid #dadce0; 
+            background: white; 
+            border-radius: 12px; 
+            cursor: pointer; 
+            font-size: 1.05rem; 
+            transition: 0.2s; 
+            text-align: left;
+            color: #3c4043;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-option:hover { background-color: #f8f9fa; border-color: #1a73e8; }
+
+        .correct { background-color: #e6f4ea !important; border-color: #1e8e3e !important; color: #137333 !important; font-weight: bold; }
+        .incorrect { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #c5221f !important; }
+        
+        #score-board { margin-top: 25px; font-size: 0.9rem; color: #70757a; letter-spacing: 1px; text-transform: uppercase; }
+        .error-msg { color: red; display: none; margin-top: 10px; }
+
+    </style>
+</head>
+<body>
+
+<div class="card" id="login-screen">
+    <h2>Simulador de Enrutamiento C2</h2>
+    <p>Ingrese la contraseña para iniciar el examen.</p>
+    <input type="password" id="password-input" placeholder="Contraseña..." onkeyup="if(event.key === 'Enter') checkPassword()">
+    <br>
+    <button class="btn-action" onclick="checkPassword()">Ingresar</button>
+    <p class="error-msg" id="error-msg">⚠️ Contraseña incorrecta</p>
+</div>
+
+<div class="card" id="quiz-screen">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 0.9rem; color: #aaa;">
+        <span id="progress">Pregunta 1</span>
+        <span>Enrutamiento y Switching</span>
+    </div>
+    
+    <div class="question-text" id="question"></div>
+    <div class="options-container" id="options"></div>
+    
+    <button class="btn-action" id="next-btn" onclick="nextQuestion()" style="display: none; margin: 20px auto 0;">Siguiente</button>
+    
+    <div id="score-board">Aciertos: <span id="score">0</span></div>
+</div>
+
+<script>
+    // --- CONFIGURACIÓN ---
+    const ACCESS_PASSWORD = "2025"; 
+    
+    // --- BANCO DE PREGUNTAS (TEST 2 + Switching) ---
+    const questionsSource = [
+        // --- PREGUNTAS DEL NUEVO ARCHIVO (TEST 2 - ACLs) ---
+        {
+            question: "¿Cuál es la wildcard de la máscara 255.255.255.224?",
+            answers: [
+                [cite_start]{ text: "0.0.0.31", correct: true }, // [cite: 292-293]
+                { text: "255.255.255.0", correct: false },
+                { text: "0.0.0.63", correct: false },
+                { text: "63.63.63.0", correct: false }
+            ]
+        },
+        {
+            question: "Sólo se puede usar ___ ACL por interfaz, protocolo y dirección.",
+            answers: [
+                [cite_start]{ text: "1", correct: true }, // [cite: 305, 310]
+                { text: "Ilimitadas", correct: false },
+                { text: "2", correct: false },
+                { text: "4", correct: false }
+            ]
+        },
+        {
+            question: "Se recomienda ubicar una ACL estándar lo más cerca del...",
+            answers: [
+                [cite_start]{ text: "Destino que se filtra", correct: true }, // [cite: 317, 320]
+                { text: "Router de borde", correct: false },
+                { text: "Tráfico de origen", correct: false },
+                { text: "Servidor DNS", correct: false }
+            ]
+        },
+        {
+            question: "Las ACL dinámicas dependen de una sesión ___ para autorizar temporalmente el tráfico.",
+            answers: [
+                [cite_start]{ text: "Telnet", correct: true }, // [cite: 334-336]
+                { text: "FTP", correct: false },
+                { text: "SSH", correct: false },
+                { text: "SNMP", correct: false }
+            ]
+        },
+        {
+            question: "El rango numérico para una ACL IPv4 extendida es:",
+            answers: [
+                [cite_start]{ text: "100-199", correct: true }, // [cite: 345, 348]
+                { text: "1300-1399", correct: false },
+                { text: "1-99", correct: false },
+                { text: "800-899", correct: false }
+            ]
+        },
+
+        // --- PREGUNTAS DE ARCHIVOS ANTERIORES (VLANs / Switching) ---
+        {
+            question: "Secuencia correcta para asignar la VLAN 10 a FastEthernet 0/1 en modo acceso:",
+            answers: [
+                { text: "fa0/1 → mode trunk → trunk vlan 10", correct: false },
+                { text: "vlan 10 → name ventas → fa0/1 → no shutdown", correct: false },
+                { text: "fa0/1 → mode access → access vlan 10", correct: true },
+                { text: "switchport access vlan 10 → fa0/1", correct: false }
+            ]
+        },
+        {
+            question: "Una buena práctica de seguridad en VLAN consiste en:",
+            answers: [
+                { text: "Cambiar la VLAN nativa por defecto", correct: true },
+                { text: "Deshabilitar todos los troncales", correct: false },
+                { text: "Encender puertos no usados", correct: false },
+                { text: "Usar Telnet para administración", correct: false }
+            ]
+        },
+        {
+            question: "Para un enlace troncal dinámico, ¿qué modo debe configurarse en al menos uno de los puertos?",
+            answers: [
+                { text: "access", correct: false },
+                { text: "dynamic desirable", correct: true },
+                { text: "monitor", correct: false },
+                { text: "passive", correct: false }
+            ]
+        },
+        {
+            question: "Las redes convergentes se caracterizan por:",
+            answers: [
+                { text: "Integrar voz, video y datos en la misma infraestructura", correct: true },
+                { text: "Eliminar switches", correct: false },
+                { text: "Requerir cables separados para voz y datos", correct: false },
+                { text: "Usar protocolos propietarios", correct: false }
+            ]
+        },
+        {
+            question: "¿Qué rango numérico corresponde a las VLAN de rango extendido?",
+            answers: [
+                { text: "1006-4094", correct: true },
+                { text: "0-15", correct: false },
+                { text: "2-100", correct: false },
+                { text: "100-1005", correct: false }
+            ]
+        },
+        {
+            question: "En la segmentación dinámica de VLAN, ¿qué criterio puede asignar un puerto a una VLAN?",
+            answers: [
+                { text: "Dirección MAC del dispositivo", correct: true },
+                { text: "Tipo de conector", correct: false },
+                { text: "Número de serie del switch", correct: false },
+                { text: "Ubicación física del switch", correct: false }
+            ]
+        },
+        {
+            question: "¿Qué modo de CLI permite ejecutar los comandos de configuración avanzada?",
+            answers: [
+                { text: "Modo de configuración global", correct: true },
+                { text: "Modo ROMmon", correct: false },
+                { text: "Modo usuario", correct: false },
+                { text: "Modo monitor", correct: false }
+            ]
+        },
+        {
+            question: "¿Qué comando muestra un resumen rápido de todas las VLAN creadas?",
+            answers: [
+                { text: "show vlan brief", correct: true },
+                { text: "show running-config vlan", correct: false },
+                { text: "show interfaces status", correct: false },
+                { text: "show ip vlan", correct: false }
+            ]
+        },
+        {
+            question: "Limitar el tráfico broadcast en un switch ayuda principalmente a:",
+            answers: [
+                { text: "Reducir congestión y mejorar rendimiento", correct: true },
+                { text: "Aumentar la latencia", correct: false },
+                { text: "Eliminar routers", correct: false },
+                { text: "Convertir todos los puertos en troncales", correct: false }
+            ]
+        },
+        {
+            question: "¿En qué capa del modelo OSI opera el switching básico de un switch no administrable?",
+            answers: [
+                { text: "Capa 2", correct: true },
+                { text: "Capa 3", correct: false },
+                { text: "Capa 4", correct: false },
+                { text: "Capa 1", correct: false }
+            ]
+        }
+    ];
+
+    // --- VARIABLES GLOBALES ---
+    let shuffledQuestions = [];
+    let currentQuestionIndex = 0;
+    let score = 0;
+
+    // --- FUNCIÓN DE LOGIN ---
+    function checkPassword() {
+        const input = document.getElementById("password-input").value;
+        const errorMsg = document.getElementById("error-msg");
+        
+        if(input === ACCESS_PASSWORD) {
+            document.getElementById("login-screen").style.display = "none";
+            document.getElementById("quiz-screen").style.display = "block";
+            startQuiz();
+        } else {
+            errorMsg.style.display = "block";
+            const card = document.getElementById("login-screen");
+            card.style.animation = "shake 0.5s";
+            setTimeout(() => card.style.animation = "", 500);
+        }
+    }
+
+    // --- LÓGICA DEL QUIZ ---
+    function startQuiz() {
+        shuffledQuestions = [...questionsSource].sort(() => Math.random() - 0.5);
+        currentQuestionIndex = 0;
+        score = 0;
+        document.getElementById("score").innerText = "0";
+        showQuestion();
+    }
+
+    function showQuestion() {
+        resetState();
+        let currentQuestion = shuffledQuestions[currentQuestionIndex];
+        
+        document.getElementById("progress").innerText = `Pregunta ${currentQuestionIndex + 1} de ${shuffledQuestions.length}`;
+        document.getElementById("question").innerText = currentQuestion.question;
+
+        const shuffledAnswers = [...currentQuestion.answers].sort(() => Math.random() - 0.5);
+
+        shuffledAnswers.forEach(answer => {
+            const button = document.createElement("button");
+            button.innerText = answer.text;
+            button.classList.add("btn-option");
+            if (answer.correct) {
+                button.dataset.correct = answer.correct;
+            }
+            button.addEventListener("click", selectAnswer);
+            document.getElementById("options").appendChild(button);
+        });
+    }
+
+    function resetState() {
+        document.getElementById("next-btn").style.display = "none";
+        const optionsContainer = document.getElementById("options");
+        while (optionsContainer.firstChild) {
+            optionsContainer.removeChild(optionsContainer.firstChild);
+        }
+    }
+
+    function selectAnswer(e) {
+        const selectedBtn = e.target;
+        const isCorrect = selectedBtn.dataset.correct === "true";
+        
+        if(isCorrect) {
+            selectedBtn.classList.add("correct");
+            score++;
+            document.getElementById("score").innerText = score;
+        } else {
+            selectedBtn.classList.add("incorrect");
+        }
+
+        Array.from(document.getElementById("options").children).forEach(button => {
+            if(button.dataset.correct === "true") {
+                button.classList.add("correct");
+            }
+            button.disabled = true;
+        });
+
+        const nextBtn = document.getElementById("next-btn");
+        if (currentQuestionIndex < shuffledQuestions.length - 1) {
+            nextBtn.innerText = "Siguiente Pregunta";
+            nextBtn.onclick = nextQuestion;
+        } else {
+            nextBtn.innerText = "Ver Resultados / Reiniciar";
+            nextBtn.onclick = showResults;
+        }
+        nextBtn.style.display = "block";
+    }
+
+    function nextQuestion() {
+        currentQuestionIndex++;
+        showQuestion();
+    }
+
+    function showResults() {
+        const card = document.getElementById("quiz-screen");
+        card.innerHTML = `
+            <h2 style="color: #333;">¡Examen Finalizado!</h2>
+            <p style="font-size: 1.2rem;">Tu puntaje final:</p>
+            <h1 style="font-size: 4rem; color: #1a73e8; margin: 0;">${score}/${shuffledQuestions.length}</h1>
+            <p>${score === shuffledQuestions.length ? '¡Excelente! 🌟' : 'Sigue practicando 💪'}</p>
+            <button class="btn-action" onclick="location.reload()">Salir / Reiniciar</button>
+        `;
+    }
+</script>
+
+<style>
+    @keyframes shake {
+        0% { transform: translateX(0); }
+        25% { transform: translateX(-5px); }
+        50% { transform: translateX(5px); }
+        75% { transform: translateX(-5px); }
+        100% { transform: translateX(0); }
+    }
+</style>
+
+</body>
+</html>
